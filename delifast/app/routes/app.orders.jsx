@@ -4,34 +4,49 @@
  */
 
 import { useState, useEffect } from "react";
-import { useLoaderData, useFetcher, Link } from "react-router";
+import { useLoaderData, useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
-import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
-import prisma from "../db.server";
-import { getShipments, refreshOrderStatus, sendOrderToDelifast, updateShipmentId } from "../services/orderHandler.server";
-import { getStatusLabel, getStatusTone, isTemporaryId } from "../utils/statusMapping";
 
+import {
+  getStatusLabel,
+  getStatusTone,
+  isTemporaryId,
+} from "../utils/statusMapping";
+
+// --------------------
+// SERVER: loader
+// --------------------
 export const loader = async ({ request }) => {
+  const { authenticate } = await import("../shopify.server");
+  const prisma = (await import("../db.server")).default;
+
+  // ✅ IMPORTANT: import your server functions dynamically too
+  // Adjust this path to the real file that exports these functions in your project:
+  // e.g. "../services/orderHandler.server" or "../services/shipments.server"
+  const {
+    getShipments,
+  } = await import("../services/orderHandler.server");
+
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
   const url = new URL(request.url);
-  const status = url.searchParams.get('status');
-  const page = parseInt(url.searchParams.get('page') || '1');
+  const status = url.searchParams.get("status");
+  const page = parseInt(url.searchParams.get("page") || "1", 10);
   const limit = 20;
   const offset = (page - 1) * limit;
 
   const { shipments, total } = await getShipments(shop, { status, limit, offset });
 
   // Get status counts
-  const [totalCount, newCount, transitCount, completedCount, errorCount] = await Promise.all([
-    prisma.shipment.count({ where: { shop } }),
-    prisma.shipment.count({ where: { shop, status: 'new' } }),
-    prisma.shipment.count({ where: { shop, status: 'in_transit' } }),
-    prisma.shipment.count({ where: { shop, status: 'completed' } }),
-    prisma.shipment.count({ where: { shop, status: 'error' } }),
-  ]);
+  const [totalCount, newCount, transitCount, completedCount, errorCount] =
+    await Promise.all([
+      prisma.shipment.count({ where: { shop } }),
+      prisma.shipment.count({ where: { shop, status: "new" } }),
+      prisma.shipment.count({ where: { shop, status: "in_transit" } }),
+      prisma.shipment.count({ where: { shop, status: "completed" } }),
+      prisma.shipment.count({ where: { shop, status: "error" } }),
+    ]);
 
   return {
     shipments,
@@ -46,61 +61,87 @@ export const loader = async ({ request }) => {
       completed: completedCount,
       error: errorCount,
     },
-    currentStatus: status,
+    currentStatus: status || null,
   };
 };
 
+// --------------------
+// SERVER: action
+// --------------------
 export const action = async ({ request }) => {
+  const { authenticate } = await import("../shopify.server");
+
+  // ✅ IMPORTANT: server functions dynamic import
+  // Adjust path to your real server file:
+  const {
+    refreshOrderStatus,
+    updateShipmentId,
+  } = await import("../services/orderHandler.server");
+
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
   const formData = await request.formData();
-  const actionType = formData.get('_action');
-  const orderId = formData.get('orderId');
+  const actionType = formData.get("_action");
+  const orderId = formData.get("orderId");
 
   try {
-    if (actionType === 'refresh_status') {
+    if (actionType === "refresh_status") {
       const result = await refreshOrderStatus(shop, orderId, admin);
-      return { success: true, message: `Status updated: ${getStatusLabel(result.status)}` };
+      return {
+        success: true,
+        message: `Status updated: ${getStatusLabel(result.status)}`,
+      };
     }
 
-    if (actionType === 'update_shipment_id') {
-      const newShipmentId = formData.get('shipmentId');
+    if (actionType === "update_shipment_id") {
+      const newShipmentId = formData.get("shipmentId");
       if (!newShipmentId) {
-        return { success: false, message: 'Shipment ID is required' };
+        return { success: false, message: "Shipment ID is required" };
       }
       await updateShipmentId(shop, orderId, newShipmentId, admin);
-      return { success: true, message: 'Shipment ID updated successfully' };
+      return { success: true, message: "Shipment ID updated successfully" };
     }
 
-    if (actionType === 'bulk_refresh') {
-      const orderIds = formData.get('orderIds')?.split(',') || [];
+    if (actionType === "bulk_refresh") {
+      const orderIds = formData.get("orderIds")?.split(",") || [];
       let updated = 0;
+
       for (const id of orderIds) {
         try {
           await refreshOrderStatus(shop, id, admin);
           updated++;
-        } catch (e) {
-          // Continue with others
+        } catch {
+          // continue
         }
       }
-      return { success: true, message: `Refreshed ${updated} of ${orderIds.length} shipments` };
+
+      return {
+        success: true,
+        message: `Refreshed ${updated} of ${orderIds.length} shipments`,
+      };
     }
 
-    return { success: false, message: 'Unknown action' };
+    return { success: false, message: "Unknown action" };
   } catch (error) {
-    return { success: false, message: error.message };
+    return { success: false, message: error?.message || "Something went wrong" };
   }
 };
 
+// --------------------
+// CLIENT: component
+// --------------------
 export default function Orders() {
-  const { shipments, total, page, limit, totalPages, statusCounts, currentStatus } = useLoaderData();
+  const { shipments, total, page, totalPages, statusCounts, currentStatus } =
+    useLoaderData();
+
   const fetcher = useFetcher();
   const shopify = useAppBridge();
+
   const [selectedOrders, setSelectedOrders] = useState([]);
   const [updateIdModal, setUpdateIdModal] = useState(null);
 
-  const isLoading = fetcher.state !== 'idle';
+  const isLoading = fetcher.state !== "idle";
   const actionData = fetcher.data;
 
   useEffect(() => {
@@ -114,32 +155,30 @@ export default function Orders() {
 
   const handleRefreshStatus = (orderId) => {
     const form = new FormData();
-    form.set('_action', 'refresh_status');
-    form.set('orderId', orderId);
-    fetcher.submit(form, { method: 'POST' });
+    form.set("_action", "refresh_status");
+    form.set("orderId", orderId);
+    fetcher.submit(form, { method: "POST" });
   };
 
   const handleBulkRefresh = () => {
     if (selectedOrders.length === 0) return;
     const form = new FormData();
-    form.set('_action', 'bulk_refresh');
-    form.set('orderIds', selectedOrders.join(','));
-    fetcher.submit(form, { method: 'POST' });
+    form.set("_action", "bulk_refresh");
+    form.set("orderIds", selectedOrders.join(","));
+    fetcher.submit(form, { method: "POST" });
   };
 
   const handleUpdateShipmentId = (orderId, newId) => {
     const form = new FormData();
-    form.set('_action', 'update_shipment_id');
-    form.set('orderId', orderId);
-    form.set('shipmentId', newId);
-    fetcher.submit(form, { method: 'POST' });
+    form.set("_action", "update_shipment_id");
+    form.set("orderId", orderId);
+    form.set("shipmentId", newId);
+    fetcher.submit(form, { method: "POST" });
   };
 
   const toggleOrderSelection = (orderId) => {
-    setSelectedOrders(prev =>
-      prev.includes(orderId)
-        ? prev.filter(id => id !== orderId)
-        : [...prev, orderId]
+    setSelectedOrders((prev) =>
+      prev.includes(orderId) ? prev.filter((id) => id !== orderId) : [...prev, orderId]
     );
   };
 
@@ -151,7 +190,11 @@ export default function Orders() {
 
   return (
     <s-page heading="Delifast Orders">
-      <s-button slot="primary-action" onClick={handleBulkRefresh} disabled={selectedOrders.length === 0 || isLoading}>
+      <s-button
+        slot="primary-action"
+        onClick={handleBulkRefresh}
+        disabled={selectedOrders.length === 0 || isLoading}
+      >
         Refresh Selected ({selectedOrders.length})
       </s-button>
 
@@ -159,19 +202,33 @@ export default function Orders() {
       <s-section>
         <s-stack direction="inline" gap="tight">
           <s-link href="/app/orders">
-            <s-badge tone={!currentStatus ? 'info' : undefined}>All ({statusCounts.all})</s-badge>
+            <s-badge tone={!currentStatus ? "info" : undefined}>
+              All ({statusCounts.all})
+            </s-badge>
           </s-link>
+
           <s-link href="/app/orders?status=new">
-            <s-badge tone={currentStatus === 'new' ? 'info' : undefined}>New ({statusCounts.new})</s-badge>
+            <s-badge tone={currentStatus === "new" ? "info" : undefined}>
+              New ({statusCounts.new})
+            </s-badge>
           </s-link>
+
           <s-link href="/app/orders?status=in_transit">
-            <s-badge tone={currentStatus === 'in_transit' ? 'warning' : undefined}>In Transit ({statusCounts.in_transit})</s-badge>
+            <s-badge tone={currentStatus === "in_transit" ? "info" : undefined}>
+              In Transit ({statusCounts.in_transit})
+            </s-badge>
           </s-link>
+
           <s-link href="/app/orders?status=completed">
-            <s-badge tone={currentStatus === 'completed' ? 'success' : undefined}>Completed ({statusCounts.completed})</s-badge>
+            <s-badge tone={currentStatus === "completed" ? "info" : undefined}>
+              Completed ({statusCounts.completed})
+            </s-badge>
           </s-link>
+
           <s-link href="/app/orders?status=error">
-            <s-badge tone={currentStatus === 'error' ? 'critical' : undefined}>Error ({statusCounts.error})</s-badge>
+            <s-badge tone={currentStatus === "error" ? "info" : undefined}>
+              Error ({statusCounts.error})
+            </s-badge>
           </s-link>
         </s-stack>
       </s-section>
@@ -181,8 +238,8 @@ export default function Orders() {
         {shipments.length === 0 ? (
           <s-empty-state heading="No shipments found">
             <s-paragraph>
-              No orders have been sent to Delifast yet. Orders will appear here once they are sent
-              either automatically (if auto mode is enabled) or manually.
+              No orders have been sent to Delifast yet. Orders will appear here once
+              they are sent either automatically (if auto mode is enabled) or manually.
             </s-paragraph>
             <s-link href="/app/settings">
               <s-button>Configure Settings</s-button>
@@ -190,15 +247,15 @@ export default function Orders() {
           </s-empty-state>
         ) : (
           <s-box>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid var(--p-color-border-subdued)' }}>
-                  <th style={{ padding: '12px', textAlign: 'left' }}>
+                <tr style={{ borderBottom: "1px solid var(--p-color-border-subdued)" }}>
+                  <th style={{ padding: "12px", textAlign: "left" }}>
                     <input
                       type="checkbox"
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedOrders(shipments.map(s => s.shopifyOrderId));
+                          setSelectedOrders(shipments.map((s) => s.shopifyOrderId));
                         } else {
                           setSelectedOrders([]);
                         }
@@ -206,27 +263,33 @@ export default function Orders() {
                       checked={selectedOrders.length === shipments.length && shipments.length > 0}
                     />
                   </th>
-                  <th style={{ padding: '12px', textAlign: 'left' }}>Order</th>
-                  <th style={{ padding: '12px', textAlign: 'left' }}>Shipment ID</th>
-                  <th style={{ padding: '12px', textAlign: 'left' }}>Status</th>
-                  <th style={{ padding: '12px', textAlign: 'left' }}>Sent</th>
-                  <th style={{ padding: '12px', textAlign: 'left' }}>Actions</th>
+                  <th style={{ padding: "12px", textAlign: "left" }}>Order</th>
+                  <th style={{ padding: "12px", textAlign: "left" }}>Shipment ID</th>
+                  <th style={{ padding: "12px", textAlign: "left" }}>Status</th>
+                  <th style={{ padding: "12px", textAlign: "left" }}>Sent</th>
+                  <th style={{ padding: "12px", textAlign: "left" }}>Actions</th>
                 </tr>
               </thead>
+
               <tbody>
-                {shipments.map(shipment => (
-                  <tr key={shipment.id} style={{ borderBottom: '1px solid var(--p-color-border-subdued)' }}>
-                    <td style={{ padding: '12px' }}>
+                {shipments.map((shipment) => (
+                  <tr
+                    key={shipment.id}
+                    style={{ borderBottom: "1px solid var(--p-color-border-subdued)" }}
+                  >
+                    <td style={{ padding: "12px" }}>
                       <input
                         type="checkbox"
                         checked={selectedOrders.includes(shipment.shopifyOrderId)}
                         onChange={() => toggleOrderSelection(shipment.shopifyOrderId)}
                       />
                     </td>
-                    <td style={{ padding: '12px' }}>
+
+                    <td style={{ padding: "12px" }}>
                       <s-text fontWeight="semibold">#{shipment.shopifyOrderNumber}</s-text>
                     </td>
-                    <td style={{ padding: '12px' }}>
+
+                    <td style={{ padding: "12px" }}>
                       {shipment.isTemporaryId ? (
                         <s-stack direction="inline" gap="tight" align="center">
                           <s-text variant="subdued">{shipment.shipmentId}</s-text>
@@ -239,23 +302,29 @@ export default function Orders() {
                           </s-button>
                         </s-stack>
                       ) : (
-                        <s-text>{shipment.shipmentId || '-'}</s-text>
+                        <s-text>{shipment.shipmentId || "-"}</s-text>
                       )}
                     </td>
-                    <td style={{ padding: '12px' }}>
+
+                    <td style={{ padding: "12px" }}>
                       {getStatusBadge(shipment.status)}
                       {shipment.statusDetails && (
-                        <s-text variant="subdued" style={{ display: 'block', fontSize: '12px' }}>
+                        <s-text
+                          variant="subdued"
+                          style={{ display: "block", fontSize: "12px" }}
+                        >
                           {shipment.statusDetails}
                         </s-text>
                       )}
                     </td>
-                    <td style={{ padding: '12px' }}>
+
+                    <td style={{ padding: "12px" }}>
                       <s-text variant="subdued">
                         {new Date(shipment.sentAt).toLocaleDateString()}
                       </s-text>
                     </td>
-                    <td style={{ padding: '12px' }}>
+
+                    <td style={{ padding: "12px" }}>
                       <s-button
                         variant="plain"
                         size="slim"
@@ -272,15 +341,31 @@ export default function Orders() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <s-stack direction="inline" gap="tight" style={{ padding: '16px', justifyContent: 'center' }}>
+              <s-stack
+                direction="inline"
+                gap="tight"
+                style={{ padding: "16px", justifyContent: "center" }}
+              >
                 {page > 1 && (
-                  <s-link href={`/app/orders?page=${page - 1}${currentStatus ? `&status=${currentStatus}` : ''}`}>
+                  <s-link
+                    href={`/app/orders?page=${page - 1}${
+                      currentStatus ? `&status=${currentStatus}` : ""
+                    }`}
+                  >
                     <s-button variant="plain">Previous</s-button>
                   </s-link>
                 )}
-                <s-text>Page {page} of {totalPages}</s-text>
+
+                <s-text>
+                  Page {page} of {totalPages}
+                </s-text>
+
                 {page < totalPages && (
-                  <s-link href={`/app/orders?page=${page + 1}${currentStatus ? `&status=${currentStatus}` : ''}`}>
+                  <s-link
+                    href={`/app/orders?page=${page + 1}${
+                      currentStatus ? `&status=${currentStatus}` : ""
+                    }`}
+                  >
                     <s-button variant="plain">Next</s-button>
                   </s-link>
                 )}
@@ -305,10 +390,11 @@ export default function Orders() {
               helpText="Look up the shipment in Delifast portal and enter the real ID"
             />
           </s-section>
+
           <s-button
             slot="primary-action"
             onClick={() => {
-              const input = document.getElementById('newShipmentId');
+              const input = document.getElementById("newShipmentId");
               if (input?.value) {
                 handleUpdateShipmentId(updateIdModal.shopifyOrderId, input.value);
               }
@@ -316,6 +402,7 @@ export default function Orders() {
           >
             Update ID
           </s-button>
+
           <s-button slot="secondary-action" variant="plain" onClick={() => setUpdateIdModal(null)}>
             Cancel
           </s-button>
@@ -358,6 +445,8 @@ export default function Orders() {
   );
 }
 
-export const headers = (headersArgs) => {
+// ✅ headers: avoid server import at top-level
+export const headers = async (headersArgs) => {
+  const { boundary } = await import("@shopify/shopify-app-react-router/server");
   return boundary.headers(headersArgs);
 };
