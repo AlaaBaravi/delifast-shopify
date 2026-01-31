@@ -6,116 +6,9 @@
 import { useState, useEffect } from "react";
 import { useLoaderData, useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
-import { boundary } from "@shopify/shopify-app-react-router/server";
-import { getAvailableCities } from "../utils/cityMapping";
 
-export const loader = async ({ request }) => {
-  // ✅ Dynamic server imports (so Vercel doesn't bundle them for the client)
-  const { authenticate } = await import("../shopify.server");
-  const prisma = (await import("../db.server")).default;
-
-  const { session } = await authenticate.admin(request);
-  const shop = session.shop;
-
-  // Get or create store settings
-  let settings = await prisma.storeSettings.findUnique({
-    where: { shop },
-  });
-
-  if (!settings) {
-    settings = await prisma.storeSettings.create({
-      data: { shop },
-    });
-  }
-
-  // Don't send password to client, just indicate if it's set
-  const hasPassword = !!settings.delifastPassword;
-
-  return {
-    settings: {
-      ...settings,
-      delifastPassword: hasPassword ? "********" : "",
-      hasPassword,
-    },
-    cities: getAvailableCities(),
-  };
-};
-
-export const action = async ({ request }) => {
-  // ✅ Dynamic server imports (so Vercel doesn't bundle them for the client)
-  const { authenticate } = await import("../shopify.server");
-  const prisma = (await import("../db.server")).default;
-  const { encrypt } = await import("../services/encryption.server");
-  const { testConnection } = await import("../services/delifastClient.server");
-
-  const { session } = await authenticate.admin(request);
-  const shop = session.shop;
-
-  const formData = await request.formData();
-  const actionType = formData.get("_action");
-
-  if (actionType === "test_connection") {
-    try {
-      const result = await testConnection(shop);
-      return { success: true, message: "Connection successful!" };
-    } catch (error) {
-      return { success: false, message: error?.message || "Connection failed" };
-    }
-  }
-
-  // Update settings
-  const tab = formData.get("tab");
-  const updates = {};
-
-  if (tab === "general" || !tab) {
-    updates.delifastUsername = formData.get("delifastUsername") || null;
-
-    // Only update password if changed (not the placeholder)
-    const newPassword = formData.get("delifastPassword");
-    if (newPassword && newPassword !== "********") {
-      updates.delifastPassword = encrypt(newPassword);
-    }
-
-    updates.delifastCustomerId = formData.get("delifastCustomerId") || null;
-    updates.mode = formData.get("mode") || "manual";
-    updates.autoSendStatus = formData.get("autoSendStatus") || "paid";
-  }
-
-  if (tab === "sender") {
-    updates.senderNo = formData.get("senderNo") || null;
-    updates.senderName = formData.get("senderName") || null;
-    updates.senderAddress = formData.get("senderAddress") || null;
-    updates.senderMobile = formData.get("senderMobile") || null;
-    updates.senderCityId = formData.get("senderCityId")
-      ? parseInt(formData.get("senderCityId"), 10)
-      : null;
-    updates.senderAreaId = formData.get("senderAreaId")
-      ? parseInt(formData.get("senderAreaId"), 10)
-      : null;
-  }
-
-  if (tab === "shipping") {
-    updates.defaultWeight = formData.get("defaultWeight")
-      ? parseFloat(formData.get("defaultWeight"))
-      : 1.0;
-    updates.defaultDimensions = formData.get("defaultDimensions") || "10x10x10";
-    updates.defaultCityId = formData.get("defaultCityId")
-      ? parseInt(formData.get("defaultCityId"), 10)
-      : 5;
-    updates.paymentMethodId = formData.get("paymentMethodId")
-      ? parseInt(formData.get("paymentMethodId"), 10)
-      : 0;
-    updates.feesOnSender = formData.get("feesOnSender") === "true";
-    updates.feesPaid = formData.get("feesPaid") === "true";
-  }
-
-  await prisma.storeSettings.update({
-    where: { shop },
-    data: updates,
-  });
-
-  return { success: true, message: "Settings saved successfully!" };
-};
+// IMPORTANT: server-only exports live here
+export { loader, action, headers } from "./app.settings.server";
 
 export default function Settings() {
   const { settings, cities } = useLoaderData();
@@ -249,6 +142,7 @@ export default function Settings() {
             Sender information is automatically populated from your Delifast
             account after login. You can also manually configure it here.
           </s-paragraph>
+
           <s-stack direction="block" gap="base">
             <s-text-field
               label="Sender Number"
@@ -264,24 +158,18 @@ export default function Settings() {
             <s-text-field
               label="Sender Address"
               value={formData.senderAddress || ""}
-              onChange={(e) =>
-                handleInputChange("senderAddress", e.target.value)
-              }
+              onChange={(e) => handleInputChange("senderAddress", e.target.value)}
               multiline
             />
             <s-text-field
               label="Mobile Number"
               value={formData.senderMobile || ""}
-              onChange={(e) =>
-                handleInputChange("senderMobile", e.target.value)
-              }
+              onChange={(e) => handleInputChange("senderMobile", e.target.value)}
             />
             <s-select
               label="City"
               value={formData.senderCityId || ""}
-              onChange={(e) =>
-                handleInputChange("senderCityId", e.target.value)
-              }
+              onChange={(e) => handleInputChange("senderCityId", e.target.value)}
             >
               <option value="">Select a city</option>
               {cities.map((city) => (
@@ -290,14 +178,14 @@ export default function Settings() {
                 </option>
               ))}
             </s-select>
+
             <s-text-field
               label="Area ID"
               value={formData.senderAreaId || ""}
-              onChange={(e) =>
-                handleInputChange("senderAreaId", e.target.value)
-              }
+              onChange={(e) => handleInputChange("senderAreaId", e.target.value)}
               helpText="Delifast area ID for your location"
             />
+
             <s-button onClick={() => handleSubmit("sender")} loading={isLoading}>
               Save Sender Settings
             </s-button>
@@ -339,6 +227,7 @@ export default function Settings() {
                 </option>
               ))}
             </s-select>
+
             <s-select
               label="Payment Method"
               value={formData.paymentMethodId || 0}
@@ -349,18 +238,21 @@ export default function Settings() {
               <option value="0">COD - Cash on Delivery</option>
               <option value="1">Prepaid</option>
             </s-select>
+
             <s-checkbox
               checked={!!formData.feesOnSender}
               onChange={(e) => handleInputChange("feesOnSender", e.target.checked)}
             >
               Shipping fees on sender (for prepaid orders)
             </s-checkbox>
+
             <s-checkbox
               checked={!!formData.feesPaid}
               onChange={(e) => handleInputChange("feesPaid", e.target.checked)}
             >
               Shipping fees already paid
             </s-checkbox>
+
             <s-button
               onClick={() => handleSubmit("shipping")}
               loading={isLoading}
@@ -411,7 +303,3 @@ export default function Settings() {
     </s-page>
   );
 }
-
-export const headers = (headersArgs) => {
-  return boundary.headers(headersArgs);
-};
