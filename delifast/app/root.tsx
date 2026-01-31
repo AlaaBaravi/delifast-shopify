@@ -1,15 +1,13 @@
-import type { LinksFunction, MetaFunction } from "react-router";
-import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
+// delifast/app/root.tsx
+import {
+  Links,
+  Meta,
+  Outlet,
+  Scripts,
+  ScrollRestoration,
+} from "react-router";
 
-export const meta: MetaFunction = () => [
-  { charSet: "utf-8" },
-  { title: "Delifast App" },
-  { name: "viewport", content: "width=device-width,initial-scale=1" },
-];
-
-export const links: LinksFunction = () => [];
-
-export default function Root() {
+export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
@@ -17,10 +15,14 @@ export default function Root() {
         <Links />
       </head>
       <body>
-        <Outlet />
+        {children}
         <ScrollRestoration />
         <Scripts />
       </body>
     </html>
   );
+}
+
+export default function Root() {
+  return <Outlet />;
 }
