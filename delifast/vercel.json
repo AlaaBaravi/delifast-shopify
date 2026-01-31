@@ -1,11 +1,10 @@
 {
   "version": 2,
-  "functions": {
-    "api/index.mjs": {
-      "runtime": "nodejs20.x"
-    }
-  },
+  "builds": [
+    { "src": "api/index.mjs", "use": "@vercel/node" }
+  ],
   "routes": [
-    { "src": "/(.*)", "dest": "/api/index.mjs" }
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "api/index.mjs" }
   ]
 }
