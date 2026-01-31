@@ -1,20 +1,31 @@
+/**
+ * Settings Page (SERVER)
+ * loader/action/headers must live in a server-only file
+ */
+
+import { boundary } from "@shopify/shopify-app-react-router/server";
+import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { encrypt } from "../services/encryption.server";
 import { testConnection } from "../services/delifastClient.server";
-import { authenticate } from "../shopify.server";
 import { getAvailableCities } from "../utils/cityMapping";
-import { boundary } from "@shopify/shopify-app-react-router/server";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
-  let settings = await prisma.storeSettings.findUnique({ where: { shop } });
+  // Get or create store settings
+  let settings = await prisma.storeSettings.findUnique({
+    where: { shop },
+  });
 
   if (!settings) {
-    settings = await prisma.storeSettings.create({ data: { shop } });
+    settings = await prisma.storeSettings.create({
+      data: { shop },
+    });
   }
 
+  // Don't send password to client, just indicate if it's set
   const hasPassword = !!settings.delifastPassword;
 
   return {
@@ -36,8 +47,8 @@ export const action = async ({ request }) => {
 
   if (actionType === "test_connection") {
     try {
-      await testConnection(shop);
-      return { success: true, message: "Connection successful!" };
+      const result = await testConnection(shop);
+      return { success: true, message: "Connection successful!", result };
     } catch (error) {
       return { success: false, message: error?.message || "Connection failed" };
     }
@@ -49,6 +60,7 @@ export const action = async ({ request }) => {
   if (tab === "general" || !tab) {
     updates.delifastUsername = formData.get("delifastUsername") || null;
 
+    // Only update password if changed (not the placeholder)
     const newPassword = formData.get("delifastPassword");
     if (newPassword && newPassword !== "********") {
       updates.delifastPassword = encrypt(newPassword);
@@ -76,18 +88,13 @@ export const action = async ({ request }) => {
     updates.defaultWeight = formData.get("defaultWeight")
       ? parseFloat(formData.get("defaultWeight"))
       : 1.0;
-
-    updates.defaultDimensions =
-      formData.get("defaultDimensions") || "10x10x10";
-
+    updates.defaultDimensions = formData.get("defaultDimensions") || "10x10x10";
     updates.defaultCityId = formData.get("defaultCityId")
       ? parseInt(formData.get("defaultCityId"), 10)
       : 5;
-
     updates.paymentMethodId = formData.get("paymentMethodId")
       ? parseInt(formData.get("paymentMethodId"), 10)
       : 0;
-
     updates.feesOnSender = formData.get("feesOnSender") === "true";
     updates.feesPaid = formData.get("feesPaid") === "true";
   }
@@ -100,4 +107,7 @@ export const action = async ({ request }) => {
   return { success: true, message: "Settings saved successfully!" };
 };
 
-export const headers = (headersArgs) => boundary.headers(headersArgs);
+// Keep headers on the server side
+export const headers = (headersArgs) => {
+  return boundary.headers(headersArgs);
+};
