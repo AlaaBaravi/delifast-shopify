@@ -1,6 +1,12 @@
 {
   "version": 2,
+  "functions": {
+    "api/index.mjs": {
+      "runtime": "nodejs20.x",
+      "includeFiles": "build/**"
+    }
+  },
   "routes": [
-    { "src": "/(.*)", "dest": "/build/server/index.js" }
+    { "src": "/(.*)", "dest": "/api/index.mjs" }
   ]
 }
