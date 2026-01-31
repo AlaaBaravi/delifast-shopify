@@ -1,0 +1,43 @@
+# Delifast Shopify App Configuration
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "49216002eaf8bc5c29a65a0a9d515deb"
+name = "delifast"
+application_url = "https://example.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+include_config_on_deploy = true
+
+[webhooks]
+api_version = "2024-10"
+
+  # App lifecycle webhooks
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/scopes_update"]
+  uri = "/webhooks/app/scopes_update"
+
+  # Order webhooks for Delifast integration
+  [[webhooks.subscriptions]]
+  topics = ["orders/create"]
+  uri = "/webhooks/orders/create"
+
+  [[webhooks.subscriptions]]
+  topics = ["orders/paid"]
+  uri = "/webhooks/orders/paid"
+
+  [[webhooks.subscriptions]]
+  topics = ["orders/updated"]
+  uri = "/webhooks/orders/updated"
+
+[access_scopes]
+# Required scopes for Delifast integration
+scopes = "read_orders,write_orders,read_fulfillments,write_fulfillments,read_customers,write_metafields,read_metafields"
+
+[auth]
+redirect_urls = ["https://example.com/auth/callback"]

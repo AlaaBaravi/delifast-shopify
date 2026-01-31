@@ -1,0 +1,130 @@
+// Prisma schema for Delifast Shopify App
+// Multi-store support with per-store settings and shipment tracking
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Shopify Session Storage (managed by @shopify/shopify-app-session-storage-prisma)
+// This stores OAuth tokens per shop - DO NOT MODIFY
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+
+  @@index([shop])
+}
+
+// Store Settings - One record per Shopify store
+// Stores Delifast credentials, sender info, and shipping defaults
+model StoreSettings {
+  id                 Int       @id @default(autoincrement())
+  shop               String    @unique // e.g., "mystore.myshopify.com"
+
+  // Delifast Credentials
+  delifastUsername   String?
+  delifastPassword   String?   // Encrypted
+  delifastCustomerId String?
+
+  // Mode settings
+  mode               String    @default("manual") // "auto" or "manual"
+  autoSendStatus     String    @default("paid")   // "created", "paid", "fulfilled"
+
+  // Sender info (populated from Delifast login response)
+  senderNo           String?
+  senderName         String?
+  senderAddress      String?
+  senderMobile       String?
+  senderCityId       Int?
+  senderAreaId       Int?
+
+  // Shipping defaults
+  defaultWeight      Float     @default(1.0)
+  defaultDimensions  String    @default("10x10x10")
+  defaultCityId      Int       @default(5) // Abu Dhabi
+  paymentMethodId    Int       @default(0) // 0 = COD, 1 = Prepaid
+  feesOnSender       Boolean   @default(true)
+  feesPaid           Boolean   @default(true)
+
+  // Delifast API Token cache
+  apiToken           String?
+  tokenExpiry        DateTime?
+
+  // Timestamps
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Relations
+  shipments          Shipment[]
+  logs               Log[]
+}
+
+// Shipment Tracking - Records of orders sent to Delifast
+model Shipment {
+  id                 Int       @id @default(autoincrement())
+  shop               String    // Store domain
+
+  // Shopify order info
+  shopifyOrderId     String    // Shopify Order GID or numeric ID
+  shopifyOrderNumber String    // Human-readable order number (e.g., #1001)
+
+  // Delifast shipment info
+  shipmentId         String?   // Delifast shipment ID (may be temporary initially)
+  isTemporaryId      Boolean   @default(false)
+  status             String    @default("new") // new, in_transit, completed, cancelled, returned
+  statusDetails      String?   // Raw status from Delifast
+
+  // Lookup tracking for temporary ID resolution
+  lookupAttempts     Int       @default(0)
+  lastLookupAt       DateTime?
+  nextLookupAt       DateTime?
+
+  // Timestamps
+  sentAt             DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Relations
+  store              StoreSettings @relation(fields: [shop], references: [shop])
+
+  @@unique([shop, shopifyOrderId])
+  @@index([shop, status])
+  @@index([isTemporaryId])
+  @@index([status])
+}
+
+// Activity Logging - Per-store logs for debugging and monitoring
+model Log {
+  id         Int      @id @default(autoincrement())
+  shop       String   // Store domain
+  level      String   // "debug", "info", "warning", "error"
+  message    String
+  context    String?  // JSON string for additional data
+  createdAt  DateTime @default(now())
+
+  // Relations
+  store      StoreSettings @relation(fields: [shop], references: [shop])
+
+  @@index([shop, level])
+  @@index([createdAt])
+  @@index([shop, createdAt])
+}

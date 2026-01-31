@@ -1,0 +1,31 @@
+{
+  "name": "delifast-shopify",
+  "version": "2.0.0",
+  "description": "Delifast shipping integration for Shopify - Multi-store support",
+  "type": "module",
+  "scripts": {
+    "dev": "cd delifast && npm run dev",
+    "build": "cd delifast && npm run build",
+    "start": "cd delifast && npm run start",
+    "deploy": "cd delifast && npm run deploy",
+    "setup": "cd delifast && npm run setup",
+    "lint": "cd delifast && npm run lint",
+    "postinstall": "cd delifast && npm install"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mojahed4e/delifast-shopify.git"
+  },
+  "keywords": [
+    "shopify",
+    "delifast",
+    "shipping",
+    "uae",
+    "delivery"
+  ],
+  "author": "mojahed4e",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

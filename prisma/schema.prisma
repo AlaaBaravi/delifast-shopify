@@ -1,0 +1,102 @@
+// Prisma schema for Delifast Shopify App
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Store settings - one record per Shopify store
+model StoreSettings {
+  id                  Int       @id @default(autoincrement())
+  shopDomain          String    @unique
+  
+  // Delifast Credentials
+  delifastUsername    String?
+  delifastPassword    String?   // Encrypted
+  delifastCustomerId  String?
+  
+  // Mode settings
+  mode                String    @default("manual") // "auto" or "manual"
+  autoSendStatus      String    @default("paid")   // "created", "paid", "fulfilled"
+  
+  // Sender info
+  senderNo            String?
+  senderName          String?
+  senderAddress       String?
+  senderMobile        String?
+  senderCityId        Int?
+  senderAreaId        Int?
+  
+  // Shipping defaults
+  defaultWeight       Float     @default(1.0)
+  defaultDimensions   String    @default("10x10x10")
+  defaultCityId       Int       @default(5)
+  paymentMethodId     Int       @default(0)
+  feesOnSender        Boolean   @default(true)
+  feesPaid            Boolean   @default(true)
+  
+  // Token cache
+  apiToken            String?
+  tokenExpiry         DateTime?
+  
+  // Timestamps
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  // Relations
+  logs                Log[]
+  shipments           Shipment[]
+}
+
+// Shipment tracking
+model Shipment {
+  id                  Int       @id @default(autoincrement())
+  shopDomain          String
+  
+  // Shopify order info
+  shopifyOrderId      String
+  shopifyOrderNumber  String
+  
+  // Delifast info
+  shipmentId          String?
+  isTemporaryId       Boolean   @default(false)
+  status              String    @default("new")
+  statusDetails       String?
+  
+  // Lookup tracking
+  lookupAttempts      Int       @default(0)
+  lastLookupAt        DateTime?
+  nextLookupAt        DateTime?
+  
+  // Timestamps
+  sentAt              DateTime  @default(now())
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  // Relations
+  store               StoreSettings @relation(fields: [shopDomain], references: [shopDomain])
+  
+  @@unique([shopDomain, shopifyOrderId])
+  @@index([shopDomain, status])
+  @@index([isTemporaryId])
+}
+
+// Logging
+model Log {
+  id          Int       @id @default(autoincrement())
+  shopDomain  String
+  level       String    // "debug", "info", "warning", "error"
+  message     String
+  context     String?   // JSON string
+  createdAt   DateTime  @default(now())
+  
+  // Relations
+  store       StoreSettings @relation(fields: [shopDomain], references: [shopDomain])
+  
+  @@index([shopDomain, level])
+  @@index([createdAt])
+}
