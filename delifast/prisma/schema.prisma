@@ -6,9 +6,10 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 
 // Shopify Session Storage (managed by @shopify/shopify-app-session-storage-prisma)
 // This stores OAuth tokens per shop - DO NOT MODIFY
