@@ -5,9 +5,10 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 
 // Store settings - one record per Shopify store
 model StoreSettings {
