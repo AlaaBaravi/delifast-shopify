@@ -3,12 +3,12 @@
  * Triggered when an order is marked as paid in Shopify
  */
 
-import { authenticate, verifyShopifyWebhookHmac } from "../shopify.server";
+import shopify, { verifyShopifyWebhookHmac } from "../shopify.server";
 import { handleOrderPaid } from "../services/orderHandler.server";
 import { logger } from "../services/logger.server";
 
 export const action = async ({ request }) => {
-  // 1) Verify HMAC first (fixes 401 webhook failures)
+  // 1) Verify HMAC first
   const { ok, rawBody, reason } = await verifyShopifyWebhookHmac(request);
 
   if (!ok) {
@@ -34,7 +34,9 @@ export const action = async ({ request }) => {
       { error: e?.message },
       "unknown"
     );
-    return new Response("Bad Request", { status: 400 });
+    // Shopify will retry on 4xx/5xx.
+    // If payload is invalid, retry won't help, so respond 200.
+    return new Response("OK", { status: 200 });
   }
 
   // 3) Shop + topic from headers
@@ -59,14 +61,37 @@ export const action = async ({ request }) => {
   );
 
   try {
-    // 4) Optional admin client if session exists
+    /**
+     * 4) Create an Admin API client using the OFFLINE session for this shop (recommended).
+     * Webhooks do NOT come with a browser session, so authenticate.admin() is not reliable here.
+     *
+     * The exact method name can vary by Shopify library version, but the idea is:
+     * - load offline session from sessionStorage
+     * - create admin client from that session
+     */
     let admin = null;
+
     try {
-      admin = await authenticate.admin(request);
-    } catch {
+      // Offline session id is usually: `offline_${shop}`
+      const offlineSessionId = `offline_${shop}`;
+      const session = await shopify.sessionStorage.loadSession(offlineSessionId);
+
+      if (session) {
+        const { admin: adminClient } = await shopify.api.clients.adminRest({
+          session,
+        });
+        admin = adminClient;
+      } else {
+        logger.info(
+          "No offline session found for shop (continuing without admin client)",
+          {},
+          shop
+        );
+      }
+    } catch (e) {
       logger.info(
-        "No admin session available for webhook request (continuing without admin)",
-        {},
+        "Failed to build admin client from offline session (continuing without admin)",
+        { error: e?.message },
         shop
       );
     }
@@ -81,6 +106,9 @@ export const action = async ({ request }) => {
       },
       shop
     );
+
+    // Important: return 200 to prevent Shopify retry storms for errors you will handle internally.
+    return new Response("OK", { status: 200 });
   }
 
   return new Response("OK", { status: 200 });
