@@ -1,3 +1,6 @@
+>>>>package.json
+
+
 {
   "name": "delifast",
   "private": true,
@@ -21,7 +24,7 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=20 <21"
+    "node": ">=20.19 <22 || >=22.12"
   },
   "dependencies": {
     "@prisma/client": "^6.16.3",
