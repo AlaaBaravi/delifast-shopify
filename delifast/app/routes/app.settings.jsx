@@ -8,8 +8,9 @@ import { useLoaderData, useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { getAvailableCities } from "../utils/cityMapping";
 
-// ✅ SERVER-ONLY: keep it INSIDE loader/action (no top-level server imports)
+// ✅ Keep server-only imports INSIDE loader/action functions
 export const loader = async ({ request }) => {
+  // Dynamically import server-only modules inside the loader
   const { authenticate } = await import("../shopify.server");
   const prisma = (await import("../db.server")).default;
 
@@ -41,10 +42,11 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
+  // Dynamically import server-only modules inside the action
   const { authenticate } = await import("../shopify.server");
   const prisma = (await import("../db.server")).default;
 
-  // These are server-only modules, dynamically imported inside action to avoid client bundling
+  // Dynamically import encryption and delifastClient server files
   const { encrypt } = await import("../services/encryption.server");
   const { testConnection } = await import("../services/delifastClient.server");
 
