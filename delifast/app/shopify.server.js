@@ -5,6 +5,7 @@ import {
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
+import { DeliveryMethod } from "@shopify/shopify-api";
 import prisma from "./db.server";
 import crypto from "node:crypto";
 
@@ -17,9 +18,36 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
+
+  /**
+   * ✅ Webhooks your app wants to register PER STORE.
+   * These callback URLs must match your Remix route files:
+   * - app/routes/webhooks.orders.create.jsx   => /webhooks/orders/create
+   * - app/routes/webhooks.orders.paid.jsx     => /webhooks/orders/paid
+   * - app/routes/webhooks.app.uninstalled.jsx => /webhooks/app/uninstalled
+   *
+   * After OAuth, call:
+   *   await registerWebhooks({ session });
+   */
+  webhooks: {
+    ORDERS_CREATE: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks/orders/create",
+    },
+    ORDERS_PAID: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks/orders/paid",
+    },
+    APP_UNINSTALLED: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks/app/uninstalled",
+    },
+  },
+
   future: {
     expiringOfflineAccessTokens: true,
   },
+
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),
@@ -29,7 +57,7 @@ const shopify = shopifyApp({
  * Verify Shopify webhook HMAC signature.
  *
  * IMPORTANT:
- * - If the webhook is created by your APP (webhook subscription), it will usually be signed using SHOPIFY_API_SECRET.
+ * - If the webhook is created by your APP (webhook subscription), it will be signed using SHOPIFY_API_SECRET.
  * - If the webhook is created manually in Shopify Admin -> Settings -> Notifications -> Webhooks,
  *   Shopify may sign using a different "signing secret" (what you see on that page).
  *
