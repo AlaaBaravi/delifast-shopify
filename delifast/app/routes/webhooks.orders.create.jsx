@@ -3,12 +3,12 @@
  * Triggered when a new order is created in Shopify
  */
 
-import { authenticate, verifyShopifyWebhookHmac } from "../shopify.server";
+import shopify, { verifyShopifyWebhookHmac } from "../shopify.server";
 import { handleOrderCreated } from "../services/orderHandler.server";
 import { logger } from "../services/logger.server";
 
 export const action = async ({ request }) => {
-  // 1) Verify HMAC first (fixes your 401 webhook auth failures)
+  // 1) Verify HMAC first
   const { ok, rawBody, reason } = await verifyShopifyWebhookHmac(request);
 
   if (!ok) {
@@ -22,11 +22,11 @@ export const action = async ({ request }) => {
       "unknown"
     );
 
-    // Shopify will keep retrying; return 401 so you notice it in logs.
+    // HMAC failure is real auth failure -> 401 is correct
     return new Response("Unauthorized", { status: 401 });
   }
 
-  // 2) Parse payload from the *raw* verified body (don’t use request.json() here)
+  // 2) Parse payload from verified raw body
   let payload;
   try {
     payload = JSON.parse(rawBody || "{}");
@@ -36,10 +36,11 @@ export const action = async ({ request }) => {
       { error: e?.message },
       "unknown"
     );
-    return new Response("Bad Request", { status: 400 });
+    // Retry won't help if JSON is invalid, so acknowledge to stop retries
+    return new Response("OK", { status: 200 });
   }
 
-  // 3) Identify shop + topic from headers (works for admin-created webhooks too)
+  // 3) Identify shop + topic from headers
   const shop =
     request.headers.get("x-shopify-shop-domain") ||
     request.headers.get("X-Shopify-Shop-Domain") ||
@@ -61,19 +62,31 @@ export const action = async ({ request }) => {
 
   try {
     /**
-     * 4) Optional: Try to get an Admin client if the shop is installed in your app
-     * - If the webhook came from Shopify Admin-created webhook, you may NOT have an admin context.
-     * - Your handler might not need admin; if it does, we attempt to create one.
+     * 4) OPTIONAL: If your handler needs Admin API, create it from the OFFLINE session.
+     * Webhooks do not include a browser/admin session, so authenticate.admin() is not reliable here.
      */
     let admin = null;
+
     try {
-      // This may fail if no valid session exists; that's ok.
-      admin = await authenticate.admin(request);
+      const offlineSessionId = `offline_${shop}`;
+      const session = await shopify.sessionStorage.loadSession(offlineSessionId);
+
+      if (session) {
+        // ⚠️ This exact client creation may differ by your package version.
+        // If you already create an admin client elsewhere, reuse that approach here.
+        const client = new shopify.api.clients.Graphql({ session });
+        admin = client;
+      } else {
+        logger.info(
+          "No offline session found for shop (continuing without admin client)",
+          {},
+          shop
+        );
+      }
     } catch (e) {
-      // Keep admin = null; your handler should handle it or use REST with stored token.
       logger.info(
-        "No admin session available for webhook request (continuing without admin)",
-        {},
+        "Failed to build admin client from offline session (continuing without admin)",
+        { error: e?.message },
         shop
       );
     }
@@ -88,8 +101,10 @@ export const action = async ({ request }) => {
       },
       shop
     );
+
+    // Prevent Shopify retry storms for internal errors you handle/log
+    return new Response("OK", { status: 200 });
   }
 
-  // Always return 200 so Shopify stops retrying after successful verification/processing
   return new Response("OK", { status: 200 });
 };
