@@ -44,7 +44,7 @@ export const action = async ({ request }) => {
   const { authenticate } = await import("../shopify.server");
   const prisma = (await import("../db.server")).default;
 
-  // these are server-only modules
+  // These are server-only modules, dynamically imported inside action to avoid client bundling
   const { encrypt } = await import("../services/encryption.server");
   const { testConnection } = await import("../services/delifastClient.server");
 
