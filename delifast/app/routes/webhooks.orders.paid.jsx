@@ -8,24 +8,56 @@ import { handleOrderPaid } from "../services/orderHandler.server";
 import { logger } from "../services/logger.server";
 
 export const action = async ({ request }) => {
-  const { shop, topic, payload, admin } = await authenticate.webhook(request);
-
-  logger.info(`Received ${topic} webhook`, {
-    orderId: payload.id,
-    orderNumber: payload.name,
-    financialStatus: payload.financial_status,
-  }, shop);
+  let shop = "unknown";
+  let topic = "orders/paid";
+  let payload;
 
   try {
-    // Process the order asynchronously
-    await handleOrderPaid(shop, payload, admin);
-  } catch (error) {
-    logger.error(`Error processing ${topic} webhook`, {
-      error: error.message,
-      orderId: payload.id,
-    }, shop);
-  }
+    // Verify webhook + parse payload
+    const result = await authenticate.webhook(request);
+    shop = result.shop;
+    topic = result.topic;
+    payload = result.payload;
 
-  // Always return 200 to acknowledge receipt
-  return new Response();
+    logger.info(
+      `Received ${topic} webhook`,
+      {
+        orderId: payload?.id,
+        orderNumber: payload?.name,
+        financialStatus: payload?.financial_status,
+      },
+      shop
+    );
+
+    try {
+      await handleOrderPaid(shop, payload, result.admin);
+    } catch (error) {
+      logger.error(
+        `Error processing ${topic} webhook`,
+        {
+          error: error?.message || String(error),
+          orderId: payload?.id,
+        },
+        shop
+      );
+
+      // Still acknowledge receipt to avoid endless retries if our internal logic fails
+      return new Response("OK", { status: 200 });
+    }
+
+    return new Response("OK", { status: 200 });
+  } catch (error) {
+    // This is usually HMAC verification failure (wrong secret) or wrong route file path
+    logger.error(
+      "Webhook authentication failed",
+      {
+        error: error?.message || String(error),
+        method: request.method,
+        url: request.url,
+      },
+      shop
+    );
+
+    return new Response("Unauthorized", { status: 401 });
+  }
 };
